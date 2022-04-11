@@ -7,10 +7,7 @@ use regatta32 as _;
 
 #[rtic::app(device = stm32f1xx_hal::pac, dispatchers = [RTC, TIM2])]
 mod app {
-
-    use cortex_m::asm::delay;
     use defmt::{println, Format};
-
     use stm32f1xx_hal::{
         gpio::{
             gpiob::{PB0, PB1, PB10, PB11, PB12, PB13},
@@ -22,13 +19,12 @@ mod app {
     use systick_monotonic::*;
 
     #[monotonic(binds = SysTick, default = true)]
-    type MyMono = Systick<5000>; // 1000 Hz / 1 ms granularity
+    type MyMono = Systick<5000>; // 5000 Hz / 200 µs granularity
 
     #[shared]
     struct Shared {
-        // led: PC13<Output<PushPull>>,
-        start_button: PB12<Input<PullDown>>, // 25 FV/IO
-        stop_button: PB13<Input<PullDown>>,  // 26 FV/IO
+        start_button: PB12<Input<PullDown>>, // 25 5V/IO
+        stop_button: PB13<Input<PullDown>>,  // 26 5V/IO
         horn: PB0<Output<PushPull>>,         // 22
         light1: PB11<Output<PushPull>>,
         light2: PB10<Output<PushPull>>,
@@ -103,7 +99,7 @@ mod app {
         instant: fugit::TimerInstantU64<5000>,
     ) {
         let instant = instant + 50.millis();
-        let seed = *cx.local.count + 1;
+        let seed = cx.local.count.wrapping_add(1);
         *cx.local.count = seed;
         let mut action = Action::None;
         cx.shared.start_button.lock(|btn| {
@@ -163,6 +159,12 @@ mod app {
         Start,
     }
 
+    #[derive(Format, Debug)]
+    pub enum Light {
+        On,
+        Off,
+    }
+
     #[task(priority=1, shared = [handel])]
     fn machine(
         mut cx: machine::Context,
@@ -197,41 +199,43 @@ mod app {
 
                 defmt::println!("Seed {}", seed);
                 let random =
-                    oorandom::Rand64::new(seed.into()).rand_range(40..90);
+                    oorandom::Rand64::new(seed.into()).rand_range(20..60);
                 defmt::println!("Warning period: {}secs", random);
 
                 re_spawn(Three, random);
             }
             Three => {
-                beep_horn::spawn(1200).unwrap();
-                set_lights::spawn_after(50.millis(), true, true, true).unwrap();
-                // horn for 1200ms
+                beep_horn::spawn(1000).unwrap();
+                set_lights::spawn_after(
+                    100.millis(),
+                    Light::On,
+                    Light::On,
+                    Light::On,
+                )
+                .unwrap();
                 re_spawn(Two, ONE_MINUTE);
             }
             Two => {
-                set_lights::spawn(false, true, true).unwrap();
                 beep_horn::spawn(200).unwrap();
+                set_lights::spawn_after(
+                    100.millis(),
+                    Light::Off,
+                    Light::On,
+                    Light::On,
+                )
+                .unwrap();
                 re_spawn(One, ONE_MINUTE);
             }
             One => {
-                set_lights::spawn(false, false, true).unwrap();
                 beep_horn::spawn(200).unwrap();
+                set_lights::spawn(Light::Off, Light::Off, Light::On).unwrap();
                 re_spawn(Start, ONE_MINUTE);
             }
             Start => {
                 beep_horn::spawn(2000).unwrap();
-                set_lights::spawn(false, false, false).unwrap();
+                set_lights::spawn(Light::Off, Light::Off, Light::Off).unwrap();
                 defmt::println!("Start !!!!!!!!!!!!!!");
                 cx.shared.handel.lock(|handel| *handel = None);
-                // let next_instant = instant + 1.secs();
-                // cx.shared.handel.lock(|handel| {
-                //     defmt::println!("spawning {:?}", state);
-                //     do_start::spawn().unwrap();
-                //     *handel = Some(
-                //         machine::spawn_at(next_instant, next_instant, Begin)
-                //             .unwrap(),
-                //     )
-                // });
             }
         }
     }
@@ -256,7 +260,7 @@ mod app {
 
     /// set light status with a small delay in between
     #[task(priority=1, shared = [light1, light2, light3])]
-    fn set_lights(cx: set_lights::Context, l1: bool, l2: bool, l3: bool) {
+    fn set_lights(cx: set_lights::Context, l1: Light, l2: Light, l3: Light) {
         let set_lights::SharedResources {
             light1,
             light2,
@@ -266,22 +270,17 @@ mod app {
         (light1, light2, light3).lock(|light1, light2, light3| {
             defmt::println!("Setting lights 1:{} 2:{} 3:{}", l1, l2, l3);
 
-            if l1 {
-                light1.set_high();
-            } else {
-                light1.set_low();
+            match l1 {
+                Light::On => light1.set_high(),
+                Light::Off => light1.set_low(),
             }
-            delay(1000);
-            if l2 {
-                light2.set_high();
-            } else {
-                light2.set_low();
+            match l2 {
+                Light::On => light2.set_high(),
+                Light::Off => light2.set_low(),
             }
-            delay(1000);
-            if l3 {
-                light3.set_high();
-            } else {
-                light3.set_low();
+            match l3 {
+                Light::On => light3.set_high(),
+                Light::Off => light3.set_low(),
             }
         });
     }
@@ -313,7 +312,10 @@ mod app {
     #[idle]
     fn idle(_cx: idle::Context) -> ! {
         loop {
-            cortex_m::asm::nop();
+            // Now Wait For Interrupt is used instead of a busy-wait loop
+            // to allow MCU to sleep between interrupts
+            // https://developer.arm.com/documentation/ddi0406/c/Application-Level-Architecture/Instruction-Details/Alphabetical-list-of-instructions/WFI
+            rtic::export::wfi()
         }
     }
 }
