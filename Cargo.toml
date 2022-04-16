@@ -20,7 +20,7 @@ oorandom = "11.1"
 # hal dependencies
 embedded-hal = "0.2.3"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
-stm32f1xx-hal = { version = "0.8", features = ["rt", "stm32f103", "medium"] }
+stm32f1xx-hal = { version = "0.9", features = ["rt", "stm32f103", "medium"] }
 
 
 # cargo build/run

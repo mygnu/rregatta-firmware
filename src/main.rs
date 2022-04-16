@@ -16,7 +16,7 @@ mod app {
         prelude::*,
         rcc::RccExt,
     };
-    use systick_monotonic::*;
+    use systick_monotonic::{fugit::TimerInstantU64, ExtU64, Systick};
 
     // A monotonic timer to enable scheduling in RTIC
     #[monotonic(binds = SysTick, default = true)]
@@ -52,8 +52,8 @@ mod app {
 
         let _clocks = rcc
             .cfgr
-            .use_hse(8.mhz())
-            .sysclk(32.mhz())
+            .use_hse(8.MHz())
+            .sysclk(32.MHz())
             .freeze(&mut flash.acr);
 
         let systick = cx.core.SYST;
@@ -71,12 +71,11 @@ mod app {
 
         reset_all::spawn().ok();
 
+        // spawn task to periodically check button state
         check_buttons::spawn(mono.now()).unwrap();
-        // led.set_low();
 
         (
             Shared {
-                // led,
                 start_button,
                 stop_button,
                 handel: None,
@@ -90,7 +89,7 @@ mod app {
         )
     }
 
-    enum Action {
+    enum ButtonAction {
         None,
         Start,
         Stop,
@@ -99,25 +98,25 @@ mod app {
     #[task(priority=2, local = [count: u64 = 0], shared = [start_button, stop_button, handel])]
     fn check_buttons(
         mut cx: check_buttons::Context,
-        instant: fugit::TimerInstantU64<5000>,
+        instant: TimerInstantU64<5000>,
     ) {
-        let instant = instant + 50.millis();
+        let instant = instant + ExtU64::millis(50);
         let seed = cx.local.count.wrapping_add(1);
         *cx.local.count = seed;
-        let mut action = Action::None;
+        let mut action = ButtonAction::None;
         cx.shared.start_button.lock(|btn| {
             if btn.is_high() {
-                action = Action::Start;
+                action = ButtonAction::Start;
             }
         });
         cx.shared.stop_button.lock(|btn| {
             if btn.is_high() {
-                action = Action::Stop;
+                action = ButtonAction::Stop;
             }
         });
 
         match action {
-            Action::Start => {
+            ButtonAction::Start => {
                 cx.shared.handel.lock(|handel| {
                     if handel.is_none() {
                         defmt::println!("spawning");
@@ -133,7 +132,7 @@ mod app {
                     }
                 });
             }
-            Action::Stop => {
+            ButtonAction::Stop => {
                 cx.shared.handel.lock(|handel| {
                     if let Some(h) = handel.take() {
                         defmt::println!("Stopping");
@@ -173,7 +172,7 @@ mod app {
     #[task(priority=1, shared = [handel])]
     fn machine(
         mut cx: machine::Context,
-        instant: fugit::TimerInstantU64<5000>,
+        instant: TimerInstantU64<5000>,
         state: State,
         seed: u64,
     ) {
@@ -212,7 +211,7 @@ mod app {
             Three => {
                 beep_horn::spawn(1000).unwrap();
                 set_lights::spawn_after(
-                    100.millis(),
+                    ExtU64::millis(100),
                     Light::On,
                     Light::On,
                     Light::On,
@@ -223,7 +222,7 @@ mod app {
             Two => {
                 beep_horn::spawn(200).unwrap();
                 set_lights::spawn_after(
-                    100.millis(),
+                    ExtU64::millis(100),
                     Light::Off,
                     Light::On,
                     Light::On,
