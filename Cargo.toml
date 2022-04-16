@@ -1,26 +1,19 @@
 [package]
-name = "regatta32"
-version = "0.1.0"
+name = "rregatta32"
+version = "1.0.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 
 [dependencies]
 cortex-m = "0.7"
-cortex-m-rtic = "1.0.0"
-systick-monotonic = "1.0.0"
-defmt = "0.3.0"
-defmt-rtt = "0.3.0"
-panic-probe = { version = "0.3.0", features = ["print-defmt"] }
-
-
+cortex-m-rtic = "1.0"
+defmt = "0.3"
+defmt-rtt = "0.3"
+embedded-hal = "0.2"
 oorandom = "11.1"
-
-# hal dependencies
-embedded-hal = "0.2.3"
-serde = { version = "1.0", default-features = false, features = ["derive"] }
+panic-probe = { version = "0.3", features = ["print-defmt"] }
 stm32f1xx-hal = { version = "0.9", features = ["rt", "stm32f103", "medium"] }
+systick-monotonic = "1.0"
 
 
 # cargo build/run
@@ -33,14 +26,6 @@ opt-level = 3
 lto = 'fat'
 overflow-checks = true
 
-# cargo test
-[profile.test]
-codegen-units = 1
-debug = 2
-debug-assertions = true
-incremental = false
-opt-level = 3
-overflow-checks = true
 
 # cargo build/run --release
 [profile.release]
@@ -52,12 +37,3 @@ lto = 'fat'
 opt-level = 3
 overflow-checks = false
 
-# cargo test --release
-[profile.bench]
-codegen-units = 1
-debug = 2
-debug-assertions = false
-incremental = false
-lto = 'fat'
-opt-level = 3
-overflow-checks = false

@@ -3,7 +3,7 @@
 #![no_main]
 #![no_std]
 
-use regatta32 as _;
+use rregatta32 as _;
 
 #[rtic::app(device = stm32f1xx_hal::pac, dispatchers = [RTC, TIM2])]
 mod app {
