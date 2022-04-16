@@ -18,22 +18,25 @@ mod app {
     };
     use systick_monotonic::*;
 
+    // A monotonic timer to enable scheduling in RTIC
     #[monotonic(binds = SysTick, default = true)]
     type MyMono = Systick<5000>; // 5000 Hz / 200 µs granularity
 
+    // shared resources between tasks
+    // each resource can be passed to a task selectively
     #[shared]
     struct Shared {
         start_button: PB12<Input<PullDown>>, // 25 5V/IO
         stop_button: PB13<Input<PullDown>>,  // 26 5V/IO
-        horn: PB0<Output<PushPull>>,         // 22
-        light1: PB11<Output<PushPull>>,
-        light2: PB10<Output<PushPull>>,
-        light3: PB1<Output<PushPull>>,
+        horn: PB0<Output<PushPull>>,         // 18
+        light1: PB11<Output<PushPull>>,      // 22
+        light2: PB10<Output<PushPull>>,      // 21
+        light3: PB1<Output<PushPull>>,       // 19
         handel: Option<machine::MyMono::SpawnHandle>,
     }
 
-    // const WARNING_PERIOD: u64 = 30;
-    const ONE_MINUTE: u64 = 60;
+    // one minute in seconds
+    const ONE_MINUTE_S: u64 = 60;
 
     #[local]
     struct Local {}
@@ -150,6 +153,8 @@ mod app {
         check_buttons::spawn_at(instant, instant).unwrap();
     }
 
+    /// State of the race timer each variant is used to perform a specific operation and trigger
+    /// next next task with a new state.
     #[derive(Debug, Clone, Copy, Format)]
     pub enum State {
         Warning,
@@ -213,7 +218,7 @@ mod app {
                     Light::On,
                 )
                 .unwrap();
-                re_spawn(Two, ONE_MINUTE);
+                re_spawn(Two, ONE_MINUTE_S);
             }
             Two => {
                 beep_horn::spawn(200).unwrap();
@@ -224,12 +229,12 @@ mod app {
                     Light::On,
                 )
                 .unwrap();
-                re_spawn(One, ONE_MINUTE);
+                re_spawn(One, ONE_MINUTE_S);
             }
             One => {
                 beep_horn::spawn(200).unwrap();
                 set_lights::spawn(Light::Off, Light::Off, Light::On).unwrap();
-                re_spawn(Start, ONE_MINUTE);
+                re_spawn(Start, ONE_MINUTE_S);
             }
             Start => {
                 beep_horn::spawn(2000).unwrap();
