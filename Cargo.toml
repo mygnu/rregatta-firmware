@@ -12,7 +12,7 @@ defmt-rtt = "0.3"
 embedded-hal = "0.2"
 oorandom = "11.1"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
-stm32f1xx-hal = { version = "0.9", features = ["rt", "stm32f103", "medium"] }
+stm32f1xx-hal = { version = "0.9", features = ["rt", "stm32f103"] }
 systick-monotonic = "1.0"
 
 
@@ -30,7 +30,7 @@ overflow-checks = true
 # cargo build/run --release
 [profile.release]
 codegen-units = 1
-debug = 2
+debug = 1
 debug-assertions = false
 incremental = false
 lto = 'fat'
