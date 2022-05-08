@@ -1,16 +1,12 @@
 [target.thumbv7m-none-eabi]
-# runner = 'arm-none-eabi-gdb'
-# runner = 'gdb-multiarch'
-runner = 'probe-run --chip STM32F103C6'
+runner = 'probe-run --chip STM32F103C6 --measure-stack'
 rustflags = [
-    "-C",
-    "linker=flip-link",
-    "-C",
-    "link-arg=-Tlink.x",
-    "-C",
-    "link-arg=-Tdefmt.x",
-    "-C",
-    "link-arg=--nmagic",
+    "-C", "linker=flip-link",
+    "-C", "link-arg=-Tlink.x",
+    "-C", "link-arg=-Tdefmt.x",  # defmt support
+    # This is needed if your flash or ram addresses are not aligned to 0x10000 in memory.x
+    # See https://github.com/rust-embedded/cortex-m-quickstart/pull/95
+    # "-C", "link-arg=--nmagic",
 ]
 
 [build]
