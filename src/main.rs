@@ -1,5 +1,5 @@
 #![deny(unsafe_code)]
-// #![deny(warnings)]
+#![deny(warnings)]
 #![no_main]
 #![no_std]
 
@@ -10,18 +10,21 @@ mod app {
     use defmt::{println, Format};
     use oorandom::Rand64;
     use stm32f1xx_hal::{
+        flash::FlashExt,
         gpio::{
             gpiob::{PB0, PB1, PB10, PB11, PB12, PB13},
             GpioExt, Input, Output, PullDown, PushPull,
         },
-        prelude::*,
         rcc::RccExt,
     };
-    use systick_monotonic::{fugit::TimerInstantU64, ExtU64, Systick};
+    use systick_monotonic::{
+        fugit::{Duration, RateExtU32, TimerInstantU64},
+        ExtU64, Systick,
+    };
 
     // A monotonic timer to enable scheduling in RTIC
     #[monotonic(binds = SysTick, default = true)]
-    type MonotonicTick = Systick<5000>; // 5000 Hz / 200 µs granularity
+    type MonotonicTick = Systick<500>; // 500 Hz / 2 ms granularity
 
     // shared resources between tasks
     // each resource can be passed to a task selectively
@@ -33,9 +36,6 @@ mod app {
         light3: PB1<Output<PushPull>>,  // 19
         handel: Option<controller::MonotonicTick::SpawnHandle>,
     }
-
-    // one minute in seconds
-    const ONE_MINUTE_S: u64 = 60;
 
     #[local]
     struct Local {
@@ -69,10 +69,10 @@ mod app {
         let light2 = gpiob.pb10.into_push_pull_output(&mut gpiob.crh);
         let light3 = gpiob.pb1.into_push_pull_output(&mut gpiob.crl);
 
-        reset_all::spawn().unwrap();
+        reset_all::spawn().ok();
 
         // spawn task to periodically check button state
-        poll_buttons::spawn(mono.now()).unwrap();
+        poll_buttons::spawn(mono.now()).ok();
 
         (
             Shared {
@@ -94,7 +94,7 @@ mod app {
     #[task(priority=2, local = [count: u64 = 0, start_button, stop_button], shared = [handel])]
     fn poll_buttons(
         mut cx: poll_buttons::Context,
-        instant: TimerInstantU64<5000>,
+        instant: TimerInstantU64<500>,
     ) {
         let poll_buttons::LocalResources {
             start_button,
@@ -107,29 +107,30 @@ mod app {
 
         cx.shared.handel.lock(|handel| {
             if stop_button.is_high() {
-               if let Some(h) = handel.take() {
-                   defmt::println!("Stopping");
-                   reset_all::spawn().ok();
-                   if h.cancel().is_ok() {
-                       defmt::println!("stopped");
-                       beep_horn::spawn_after(100_u64.millis(), 300, 2).ok();
-                   } else {
-                       defmt::println!("Something went wrong");
-                   }
-               }
-           } else if start_button.is_high() && handel.is_none() {
-               defmt::println!("spawning");
-               *handel = controller::spawn_at(
-                   monotonics::now(),
-                   instant,
-                   State::Warmup,
-                   *count,
-               )
-               .ok();
-           } 
-       });
+                if let Some(h) = handel.take() {
+                    defmt::println!("Stopping");
+                    reset_all::spawn().ok();
+                    if h.cancel().is_ok() {
+                        defmt::println!("stopped");
+                        beep_horn::spawn_after(100.millis(), 300.millis(), 2)
+                            .ok();
+                    } else {
+                        defmt::println!("Something went wrong");
+                    }
+                }
+            } else if start_button.is_high() && handel.is_none() {
+                defmt::println!("spawning");
+                *handel = controller::spawn_at(
+                    monotonics::now(),
+                    instant,
+                    State::Warmup,
+                    *count,
+                )
+                .ok();
+            }
+        });
         // Periodic check buttons every 50ms
-        poll_buttons::spawn_at(instant, instant + 50_u64.millis()).unwrap();
+        poll_buttons::spawn_at(instant, instant + 50.millis()).ok();
     }
 
     /// State of the race timer each variant is used to perform a specific
@@ -146,7 +147,7 @@ mod app {
     #[task(priority=1, shared = [handel])]
     fn controller(
         mut cx: controller::Context,
-        instant: TimerInstantU64<5000>,
+        instant: TimerInstantU64<500>,
         state: State,
         seed: u64,
     ) {
@@ -155,61 +156,47 @@ mod app {
         defmt::println!("State {:?}", state);
 
         // re-spawn self with given state and time (seconds from now)
-        let mut re_spawn = |state: State, secs: u64| {
+        let mut re_spawn = |state: State, duration: Duration<u64, 1, 500>| {
             cx.shared.handel.lock(|handel| {
                 defmt::println!("spawning {:?}", state);
-                *handel = Some(
-                    controller::spawn_at(
-                        instant + secs.secs(),
-                        instant + secs.secs(),
-                        state,
-                        seed,
-                    )
-                    .unwrap(),
+                *handel = controller::spawn_at(
+                    instant + duration,
+                    instant + duration,
+                    state,
+                    seed,
                 )
+                .ok()
             });
         };
 
         match state {
             Warmup => {
                 // horn for 800ms once
-                beep_horn::spawn(800, 1).ok();
+                beep_horn::spawn(800.millis(), 1).ok();
 
                 defmt::println!("Seed {}", seed);
-                let random = Rand64::new(seed.into()).rand_range(30..60);
+                let random = Rand64::new(seed.into()).rand_range(3..6);
                 defmt::println!("Warmup period: {}secs", random);
 
-                re_spawn(Three, random);
+                re_spawn(Three, random.secs());
             }
             Three => {
-                beep_horn::spawn(1200, 1).ok();
-                set_lights::spawn_after(
-                    100_u64.millis(),
-                    Light::On,
-                    Light::On,
-                    Light::On,
-                )
-                .ok();
-                re_spawn(Two, ONE_MINUTE_S);
+                beep_horn::spawn(1200.millis(), 1).ok();
+                set_lights::spawn(Light::On, Light::On, Light::On).ok();
+                re_spawn(Two, 1.minutes());
             }
             Two => {
-                beep_horn::spawn(400, 1).ok();
-                set_lights::spawn_after(
-                    100_u64.millis(),
-                    Light::Off,
-                    Light::On,
-                    Light::On,
-                )
-                .ok();
-                re_spawn(One, ONE_MINUTE_S);
+                beep_horn::spawn(400.millis(), 1).ok();
+                set_lights::spawn(Light::Off, Light::On, Light::On).ok();
+                re_spawn(One, 1.minutes());
             }
             One => {
-                beep_horn::spawn(400, 1).ok();
+                beep_horn::spawn(400.millis(), 1).ok();
                 set_lights::spawn(Light::Off, Light::Off, Light::On).ok();
-                re_spawn(Start, ONE_MINUTE_S);
+                re_spawn(Start, 1.minutes());
             }
             Start => {
-                beep_horn::spawn(2000, 1).ok();
+                beep_horn::spawn(2000.millis(), 1).ok();
                 set_lights::spawn(Light::Off, Light::Off, Light::Off).ok();
                 defmt::println!("Start !!!!!!!!!!!!!!");
                 cx.shared.handel.lock(|handel| *handel = None);
@@ -270,25 +257,27 @@ mod app {
 
     /// set horn state high for given milliseconds
     #[task(priority=1, local = [is_high: bool = false], shared = [horn])]
-    fn beep_horn(mut cx: beep_horn::Context, millis: u64, repetition: i8) {
+    fn beep_horn(
+        mut cx: beep_horn::Context,
+        duration: Duration<u64, 1, 500>,
+        times: i8,
+    ) {
         if !*cx.local.is_high {
             *cx.local.is_high = true;
             cx.shared.horn.lock(|horn| {
                 println!("horn START");
                 horn.set_high();
             });
-            beep_horn::spawn_after(millis.millis(), millis, repetition - 1)
-                .ok();
+            beep_horn::spawn_after(duration, duration, times - 1).ok();
         } else {
             *cx.local.is_high = false;
             cx.shared.horn.lock(|horn| {
                 println!("horn STOP");
                 horn.set_low();
             });
-            // spawn again if repetitions are left
-            if repetition > 0 {
-                beep_horn::spawn_after(50_u64.millis(), millis, repetition - 1)
-                    .ok();
+            // spawn again if times are left
+            if times > 0 {
+                beep_horn::spawn_after(50.millis(), duration, times - 1).ok();
             }
         }
     }
