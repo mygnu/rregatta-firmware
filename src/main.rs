@@ -175,7 +175,7 @@ mod app {
                 beep_horn::spawn(800.millis(), 1).ok();
 
                 defmt::println!("Seed {}", seed);
-                let random = Rand64::new(seed.into()).rand_range(3..6);
+                let random = Rand64::new(seed.into()).rand_range(30..60);
                 defmt::println!("Warmup period: {}secs", random);
 
                 re_spawn(Three, random.secs());
@@ -238,7 +238,7 @@ mod app {
         } = cx.shared;
 
         (light1, light2, light3).lock(|light1, light2, light3| {
-            defmt::println!("Setting lights 1:{} 2:{} 3:{}", l1, l2, l3);
+            defmt::println!("Setting lights {}--{}--{}", l1, l2, l3);
 
             match l1 {
                 Light::On => light1.set_high(),
@@ -288,7 +288,7 @@ mod app {
             // Now Wait For Interrupt is used instead of a busy-wait loop
             // to allow MCU to sleep between interrupts
             // https://developer.arm.com/documentation/ddi0406/c/Application-Level-Architecture/Instruction-Details/Alphabetical-list-of-instructions/WFI
-            rtic::export::wfi()
+            rtic::export::nop()
         }
     }
 }
